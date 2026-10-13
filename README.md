@@ -11,6 +11,7 @@ Prerequisites: [uv](https://docs.astral.sh/uv/), Docker, the Azure CLI (`az logi
 ```bash
 cp .env.example .env          # then fill in your endpoint + deployment names
 docker compose up -d          # Postgres + pgvector on localhost:5433
+uv run python scripts/01_download.py   # fetch the corpus PDFs
 uv run python scripts/00_check_setup.py
 uv run pytest
 ```
@@ -20,7 +21,8 @@ uv run pytest
 | Step | Status |
 |---|---|
 | 0. Setup | ✅ |
-| 1. Ingest & parse | ⏳ |
+| 1a. Ingest & parse (PyMuPDF) | ✅ |
+| 1b. Ingest & parse (Document Intelligence) | ⏳ |
 | 2. Chunking | |
 | 3. Embedding | |
 | 4. Index | |

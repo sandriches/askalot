@@ -19,3 +19,7 @@ data/eval/runs/*
 .DS_Store
 .idea/
 .vscode/
+
+# Source PDFs: public but copyrighted, fetched by scripts/01_download.py
+data/raw/*.pdf
+data/raw/*.part

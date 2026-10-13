@@ -1,0 +1,66 @@
+# The corpus: public Dutch infrastructure documents.
+#
+# Only this manifest is committed. The PDFs are publicly downloadable but
+# copyrighted, so they're kept out of git; `scripts/01_download.py` fetches
+# them into data/raw/.
+#
+# The mix is deliberate: a long design guideline, project-specific requirement
+# specs (numbered requirements, the stuff Strukton extracts), a programme of
+# requirements, rail design rules, and an FAQ.
+
+documents:
+  - doc_id: rws-rok-1-4
+    title: Richtlijnen Ontwerp Kunstwerken (ROK) 1.4, RTD 1001:2017
+    publisher: Rijkswaterstaat
+    kind: guideline
+    filename: rws-rok-1-4.pdf
+    source_url: https://www.tenderned.nl/papi/tenderned-rs-tns/v2/publicaties/113901/documenten/2573238/content
+
+  - doc_id: rws-rok-faq-2016
+    title: ROK helpdesk FAQ 2016
+    publisher: Rijkswaterstaat
+    kind: faq
+    filename: rws-rok-faq-2016.pdf
+    source_url: https://open.rws.nl/publish/pages/169438/rok_faq_2016.pdf
+
+  - doc_id: rws-rtd-1004
+    title: RTD 1004 Resultaatsbeschrijving ontwerpdocumenten kunstwerken v1.0
+    publisher: Rijkswaterstaat
+    kind: guideline
+    filename: rws-rtd-1004.pdf
+    source_url: https://rok-rws.wikixl.nl/images/rws-rok/3/35/RTD_1004_-_Resultaatsbeschrijving_ontwerpdocumenten_kunstwerken_-_v1.0.pdf
+
+  - doc_id: rws-vse-kribbakens
+    title: Vraagspecificatie Eisen Vervanging Kribbakens v1.0 (31213310)
+    publisher: Rijkswaterstaat
+    kind: requirements_spec
+    filename: rws-vse-kribbakens.pdf
+    source_url: https://www.tenderned.nl/papi/tenderned-rs-tns/v2/publicaties/426091/documenten/14269693/content
+
+  - doc_id: rws-vse-waterbeheersysteem
+    title: Vraagspecificatie Eisen D&C Waterbeheersysteem v1.0 (31152626)
+    publisher: Rijkswaterstaat
+    kind: requirements_spec
+    filename: rws-vse-waterbeheersysteem.pdf
+    source_url: https://www.tenderned.nl/papi/tenderned-rs-tns/v2/publicaties/387801/documenten/9883532/content
+
+  - doc_id: rws-vse-krammersluizen-vaarweg
+    title: Renovatie Krammersluizen, Vraagspecificatie Eisen Vaarwegsysteem (31138697)
+    publisher: Rijkswaterstaat
+    kind: requirements_spec
+    filename: rws-vse-krammersluizen-vaarweg.pdf
+    source_url: https://www.tenderned.nl/papi/tenderned-rs-tns/v2/publicaties/274964/documenten/8318113/content
+
+  - doc_id: prorail-ovs00112
+    title: OVS00112 Railgebonden gebouwen v006
+    publisher: ProRail
+    kind: design_rules
+    filename: prorail-ovs00112.pdf
+    source_url: https://www.tenderned.nl/papi/tenderned-rs-tns/v2/publicaties/328745/documenten/10123895/content
+
+  - doc_id: prorail-pve-perronrand
+    title: Perronrandbeveiliging Programma van Eisen (17 februari 2020)
+    publisher: ProRail
+    kind: programme_of_requirements
+    filename: prorail-pve-perronrand.pdf
+    source_url: https://www.tenderned.nl/papi/tenderned-rs-tns/v2/publicaties/196238/documenten/5508029/content

@@ -27,10 +27,12 @@ uv run python scripts/01_inspect_page.py rws-vse-kribbakens 18   # -> data/parse
 
 PyMuPDF reads the PDF's text layer and returns *blocks* with exact coordinates and font information, but it doesn't know what a block *is*. We add structure with heuristics:
 
-1. **Tables:** PyMuPDF's line-based table finder. We render the Markdown ourselves (see finding 2), and drop text blocks inside the table area so the text isn't duplicated.
-2. **Split blocks into runs of lines:** a new run starts when the style switches between heading and body text, or when a line starts with a list marker (see finding 1).
+1. **Tables:** PyMuPDF's line-based table finder. We render the Markdown ourselves (see finding 2), and drop text *lines* inside the table area so the text isn't duplicated. (Originally whole *blocks* were dropped, which silently lost text; see step 1b.)
+2. **Split blocks into runs of lines:** a new run starts when the style switches between heading and body text, when a line starts with a list marker or multi-level numbering, or after a vertical gap (see finding 1).
 3. **Classify each run:** *heading* if it's short and in a larger or bold font (level from the numbering `3.2.1` → 3, otherwise from font size); *list item* if it starts with a bullet or `1.` / `a)`; otherwise *paragraph*.
-4. **Headers and footers:** a block near the top or bottom edge whose text (with digits ignored) repeats on ≥30% of pages is typed `OTHER`. It's kept for traceability, and chunking will skip it.
+4. **Headers and footers:** shared with the Document Intelligence parser (`postprocess.py`, see step 1b). Margin elements made of words that repeat in the margins of many pages are typed `OTHER`. They're kept for traceability, and chunking will skip them.
+
+> Step 1b moved the text rules into `text.py`, shared by both parsers, and fixed further baseline bugs found by comparing the parsers side by side. See [01b-docintel.md](01b-docintel.md).
 
 ## Findings on the real documents
 
@@ -42,13 +44,14 @@ Checking the output on real documents turned up three problems that the first ve
 
 **3. Bold text that isn't a heading.** Captions (`Tabel 6-5: ...`), labels inside the requirement cards (`Aanvangsdatum:`) and table-of-contents page numbers were being typed as headings. *Fix:* three simple exclusion rules.
 
-**Not a problem: scans.** Every page has a text layer. The few "empty" pages are figure pages or blank, so no OCR is needed for this corpus. For Strukton's real documents (scanned drawings, older contracts) OCR would matter, which is a point in favour of Document Intelligence.
+**Scans:** the per-page character count suggested every page had a text layer, but step 1b showed that ROK pages 93–100 are scanned images, with only a header in the text layer. Header text had pushed those pages over the "empty" threshold. For Strukton's real documents (scanned drawings, older contracts) OCR matters, which is a point in favour of Document Intelligence.
 
 ## Known limitations (deliberately left for the comparison)
 
 - **Table of contents** entries are typed as headings or paragraphs. They'll need to be filtered out, or handled better by a layout model.
 - **Unnumbered and italic sub-headings** (e.g. `2.2.3.1 ...` in italics) are sometimes merged with their paragraph, because the heuristic only looks at bold and size.
 - **Reading order** is top-to-bottom then left-to-right. That's fine for these single-column documents, but it fails on multi-column layouts.
+- **Scanned pages** (ROK pages 93–100) give no text at all: there's no OCR.
 - **Tables without gridlines** aren't detected, because the table finder looks for drawn lines.
 - **Images and figures** are ignored, including any text inside them.
 

@@ -1,6 +1,6 @@
 """Step 1: parse every downloaded PDF into Elements.
 
-    uv run python scripts/01_parse.py [--doc DOC_ID]
+    uv run python scripts/01_parse.py [--parser pymupdf|docintel] [--doc DOC_ID]
 
 Writes:
     data/parsed/documents.jsonl          one Document per source file
@@ -12,12 +12,13 @@ import time
 from collections import Counter
 
 from rag.config import get_settings
+from rag.ingest.docintel_parser import DocIntelParser
 from rag.ingest.manifest import load_manifest, to_document
 from rag.ingest.pymupdf_parser import PyMuPDFParser
 from rag.io import write_jsonl
 from rag.models import Element, ElementType
 
-PARSERS = {"pymupdf": PyMuPDFParser}
+PARSERS = {"pymupdf": PyMuPDFParser, "docintel": DocIntelParser}
 MIN_CHARS_PER_PAGE = 50  # less than this on a page suggests a scan with no text layer
 
 

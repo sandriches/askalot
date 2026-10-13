@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import OpenAI
 
@@ -27,3 +28,16 @@ def get_openai_client() -> OpenAI:
     else:
         api_key = get_bearer_token_provider(DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE)
     return OpenAI(base_url=settings.openai_base_url, api_key=api_key)
+
+
+@lru_cache
+def get_docintel_client() -> DocumentIntelligenceClient:
+    """Document Intelligence client, authenticated with Entra ID.
+
+    Needs the 'Cognitive Services User' role on the resource; the OpenAI role
+    doesn't include Document Intelligence's analyze action.
+    """
+    endpoint = get_settings().azure_docintel_endpoint
+    if not endpoint:
+        raise RuntimeError("AZURE_DOCINTEL_ENDPOINT is not set")
+    return DocumentIntelligenceClient(endpoint, DefaultAzureCredential())

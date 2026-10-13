@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # managed identity when deployed) — no secrets in config.
     azure_openai_api_key: SecretStr | None = None
 
+    # --- Document Intelligence (same Foundry resource, cognitiveservices.azure.com host) ---
+    azure_docintel_endpoint: str | None = None
+
     # --- Postgres + pgvector ---
     database_url: str = "postgresql://rag:rag@localhost:5433/rag"
 

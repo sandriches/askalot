@@ -8,7 +8,6 @@ from rag.ingest.pymupdf_parser import (
     PyMuPDFParser,
     _classify,
     _split_block,
-    _table_markdown,
 )
 from rag.models import ElementType
 
@@ -21,14 +20,14 @@ def sample_pdf(tmp_path):
     for i in range(N_PAGES):
         page = pdf.new_page()  # A4-ish, 595 x 842 pt
         page.insert_text((72, 30), "Vraagspecificatie Eisen - versie 1.0", fontsize=8)
-        page.insert_text((72, 100), f"{i + 1}.2 Geluid", fontsize=16)
+        page.insert_text((72, 200), f"{i + 1}.2 Geluid", fontsize=16)
         page.insert_textbox(
-            pymupdf.Rect(72, 120, 520, 200),
+            pymupdf.Rect(72, 220, 520, 300),
             "De geluidsbelasting mag niet hoger zijn dan de grenswaarde uit de "
             "vergunning. Dit geldt voor alle fasen van het werk.",
             fontsize=10,
         )
-        page.insert_text((72, 230), "- Metingen worden maandelijks uitgevoerd", fontsize=10)
+        page.insert_text((72, 330), "- Metingen worden maandelijks uitgevoerd", fontsize=10)
         page.insert_text((72, 820), f"Pagina {i + 1} van {N_PAGES}", fontsize=8)
     path = tmp_path / "sample.pdf"
     pdf.save(path)
@@ -116,21 +115,6 @@ def test_each_list_marker_starts_a_new_run():
     assert len(_split_block(lines, body_size=10.0)) == 3
 
 
-def test_merged_cells_are_not_repeated_and_empty_rows_dropped():
-    rows = [
-        ["SYS-0010", "Ontwerp Topteken", "Geldigheids-", "G"],
-        ["", "Het Topteken dient te voldoen", None, None],
-        ["", None, None, None],
-    ]
-    md = _table_markdown(rows)
-    assert md.count("Het Topteken dient te voldoen") == 1
-    assert md.splitlines() == [
-        "|SYS-0010|Ontwerp Topteken|Geldigheids-|G|",
-        "|---|---|---|---|",
-        "||Het Topteken dient te voldoen|||",
-    ]
-
-
 @pytest.mark.parametrize("text", ["Tabel 6-5: Warmtegeleiding hout", "Aanvangsdatum:", "60"])
 def test_bold_non_headings_are_not_headings(text):
     el_type, _ = _classify(text, size=10.0, bold=True, body_size=10.0)
@@ -140,3 +124,38 @@ def test_bold_non_headings_are_not_headings(text):
 def test_appendix_title_is_still_a_heading():
     el_type, _ = _classify("Bijlage B Systeemdecompositie", size=10.0, bold=True, body_size=10.0)
     assert el_type == ElementType.HEADING
+
+
+def test_vertical_gap_starts_a_new_run():
+    caption = {
+        "bbox": (0, 0, 100, 10),
+        "spans": [{"text": "Tabel 2: Normen", "size": 10.0, "flags": 0}],
+    }
+    para = {"bbox": (0, 30, 100, 40), "spans": [{"text": "Bovenop de", "size": 10.0, "flags": 0}]}
+    assert len(_split_block([caption, para], body_size=10.0)) == 2
+
+
+def test_paragraph_sharing_a_block_with_a_table_is_kept(tmp_path):
+    """Regression: a whole block was dropped if it mostly overlapped a table."""
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    for r in range(6):
+        for c in range(2):
+            rect = pymupdf.Rect(72 + c * 150, 100 + r * 14, 72 + (c + 1) * 150, 114 + r * 14)
+            page.draw_rect(rect, color=(0, 0, 0), width=0.5)
+            page.insert_text((rect.x0 + 3, rect.y1 - 3), f"cel {r}{c}", fontsize=9)
+    page.insert_text((72, 200), "Bovenop de algemene regelgeving gelden voorschriften.", fontsize=9)
+    path = tmp_path / "t.pdf"
+    pdf.save(path)
+
+    elements = PyMuPDFParser().parse(path, "t")
+    assert any("Bovenop de algemene" in e.text for e in elements if e.type != ElementType.TABLE)
+
+
+def test_consecutive_numbered_headings_are_split():
+    lines = [
+        _line("3.3.1 Casco algemeen"),
+        _line("3.3.2 Waterdichte kruipruimte"),
+        _line("3.3.4 Dak"),
+    ]
+    assert len(_split_block(lines, body_size=10.0)) == 3

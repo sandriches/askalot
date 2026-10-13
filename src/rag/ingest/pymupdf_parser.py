@@ -3,39 +3,45 @@
 PyMuPDF gives us text blocks with exact coordinates and font information, but
 no idea what a block *is*. So we infer structure with heuristics:
 
-- blocks are first split into runs of lines (a heading line and the paragraph
-             under it often share one PyMuPDF block), then each run is typed:
+- runs:      blocks are first split into runs of lines (a heading and the
+             paragraph under it often share one PyMuPDF block); each run is typed:
 - heading:   short run in a larger font, or bold and short. Level comes from
              the numbering ("3.2.1 ..." -> 3) or, if unnumbered, the font size.
 - list item: starts with a bullet or "a." / "1)" style marker.
-- table:     PyMuPDF's line-based table finder, rendered as Markdown by us
-             (merged cells handled). Text blocks inside a table area are
-             dropped so the text isn't duplicated.
-- header/footer: a block near the top/bottom edge whose text (digits ignored)
-             repeats on many pages. Kept, but typed OTHER so chunking can skip it.
+- table:     PyMuPDF's line-based table finder. We render the Markdown
+             ourselves from the raw cells: PyMuPDF's to_markdown() repeats
+             merged-cell text in every spanned column. Text lines inside a
+             table area are dropped so the text isn't duplicated.
+- header/footer: shared post-processing (postprocess.py) re-types repeating
+             text in the page margins as OTHER, so chunking can skip it.
 
 These heuristics are the weak point, and that's intentional: step 1b compares
 this baseline against Azure Document Intelligence, which uses a layout model.
 """
 
-import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf
 
+from rag.ingest.postprocess import mark_repeating_margins
+from rag.ingest.text import (
+    LIST_MARKER,
+    MULTILEVEL_HEADING,
+    clean_text,
+    is_non_heading,
+    is_unstyled_heading,
+    numbering_level,
+    table_markdown,
+)
 from rag.models import BBox, Element, ElementType
 
-NUMBERED_HEADING = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+\S")
-LIST_MARKER = re.compile(r"^(?:[•\-–▪◦·●○■□]|\(?[a-z0-9]{1,2}[.)])\s+")
-CAPTION = re.compile(r"^(Tabel|Figuur|Afbeelding)\s*[\dA-Z][\d.\-]*\s*[:.]", re.IGNORECASE)
 BOLD_FLAG = 1 << 4  # PyMuPDF span flag for bold
 
 MAX_HEADING_CHARS = 150
 HEADING_SIZE_RATIO = 1.15  # font must be this much larger than body text
-EDGE_FRACTION = 0.08  # top/bottom 8% of the page counts as header/footer zone
-MIN_TABLE_OVERLAP = 0.5
+PARAGRAPH_GAP = 0.8  # vertical gap, as a fraction of line height, that starts a new run
 
 
 @dataclass
@@ -56,9 +62,9 @@ class PyMuPDFParser:
         with pymupdf.open(pdf_path) as pdf:
             body_size = _body_font_size(pdf)
             blocks: list[_Block] = []
+            page_heights = {page.number + 1: page.rect.height for page in pdf}
             for page in pdf:
                 blocks.extend(_parse_page(page, body_size))
-            _mark_headers_and_footers(blocks, pdf)
 
         elements: list[Element] = []
         index_on_page: Counter[int] = Counter()
@@ -77,6 +83,7 @@ class PyMuPDFParser:
                     parser=self.name,
                 )
             )
+        mark_repeating_margins(elements, page_heights)
         return elements
 
 
@@ -87,20 +94,22 @@ def _parse_page(page: pymupdf.Page, body_size: float) -> list[_Block]:
     tables = [t for t in page.find_tables().tables if t.row_count >= 2 and t.col_count >= 2]
     table_rects = [pymupdf.Rect(t.bbox) for t in tables]
     for t, rect in zip(tables, table_rects, strict=True):
-        if markdown := _table_markdown(t.extract()):
+        if markdown := table_markdown(t.extract()):
             out.append(_Block(page_no, rect, markdown, ElementType.TABLE))
 
     for block in page.get_text("dict", sort=True)["blocks"]:
         if block["type"] != 0:  # 1 = image block
             continue
-        if any(_overlap(pymupdf.Rect(block["bbox"]), tr) > MIN_TABLE_OVERLAP for tr in table_rects):
-            continue
-        for lines in _split_block(block["lines"], body_size):
-            text, max_size, all_bold = _lines_text(lines)
+        # Filter per line, not per block: PyMuPDF sometimes puts a table's cell
+        # text, its caption and the next paragraph in one block, and dropping
+        # the whole block would silently lose that paragraph.
+        kept = [ln for ln in block["lines"] if not _in_any(ln["bbox"], table_rects)]
+        for run in _split_block(kept, body_size):
+            text, max_size, all_bold = _lines_text(run)
             if not text:
                 continue
-            rect = pymupdf.Rect(lines[0]["bbox"])
-            for line in lines[1:]:
+            rect = pymupdf.Rect(run[0]["bbox"])
+            for line in run[1:]:
                 rect |= line["bbox"]
             el_type, level = _classify(text, max_size, all_bold, body_size)
             out.append(_Block(page_no, rect, text, el_type, level))
@@ -117,10 +126,12 @@ def _split_block(lines: list[dict], body_size: float) -> list[list[dict]]:
     PyMuPDF groups lines by proximity, so a heading is often in the same block
     as the paragraph below it, and consecutive list items share one block. We
     start a new run when a line switches between heading-style and body-style,
-    or when it starts with a list marker.
+    when it starts with a list marker or multi-level numbering ("3.3.2 ..."), or
+    after a vertical gap (a blank line).
     """
     runs: list[list[dict]] = []
     prev_heading_style: bool | None = None
+    prev_bottom: float | None = None
     for line in lines:
         spans = [s for s in line["spans"] if s["text"].strip()]
         if not spans:
@@ -129,34 +140,15 @@ def _split_block(lines: list[dict], body_size: float) -> list[list[dict]]:
         heading_style = all(s["flags"] & BOLD_FLAG for s in spans) or (
             max(s["size"] for s in spans) >= body_size * HEADING_SIZE_RATIO
         )
-        if not runs or heading_style != prev_heading_style or LIST_MARKER.match(text):
+        height = line["bbox"][3] - line["bbox"][1]
+        gap = prev_bottom is not None and line["bbox"][1] - prev_bottom > height * PARAGRAPH_GAP
+        starts_item = LIST_MARKER.match(text) or MULTILEVEL_HEADING.match(text)
+        if not runs or heading_style != prev_heading_style or starts_item or gap:
             runs.append([])
         runs[-1].append(line)
         prev_heading_style = heading_style
+        prev_bottom = line["bbox"][3]
     return runs
-
-
-def _table_markdown(rows: list[list[str | None]]) -> str:
-    """Render extracted cells as a Markdown table.
-
-    PyMuPDF returns None for cells covered by a merged cell. Its own
-    to_markdown() repeats the merged text in each of them, which triples the
-    requirement text in RWS requirement cards, so we render it ourselves.
-    """
-    clean = [[_clean_cell(c) for c in row] for row in rows]
-    clean = [row for row in clean if any(row)]
-    if len(clean) < 2:
-        return ""
-    lines = ["|" + "|".join(clean[0]) + "|", "|" + "|".join("---" for _ in clean[0]) + "|"]
-    lines += ["|" + "|".join(row) + "|" for row in clean[1:]]
-    return "\n".join(lines)
-
-
-def _clean_cell(cell: str | None) -> str:
-    if not cell:
-        return ""
-    text = re.sub(r"-\n(?=[a-z])", "", cell)  # undo hyphenation inside a cell
-    return re.sub(r"\s+", " ", text.replace("|", "/")).strip()
 
 
 def _lines_text(lines: list[dict]) -> tuple[str, float, bool]:
@@ -177,7 +169,7 @@ def _lines_text(lines: list[dict]) -> tuple[str, float, bool]:
             text += line_text  # "Noord-" + "Holland" -> "Noord-Holland"
         else:
             text = f"{text} {line_text}" if text else line_text
-    text = re.sub(r"\s+", " ", text.replace("­", "")).strip()
+    text = clean_text(text)
     return text, max_size, all_bold and bool(text)
 
 
@@ -186,13 +178,11 @@ def _classify(
 ) -> tuple[ElementType, int | None]:
     is_short = len(text) <= MAX_HEADING_CHARS
     is_large = size >= body_size * HEADING_SIZE_RATIO
-    # Bold or large text that still isn't a heading: captions ("Tabel 6-5: ..."),
-    # form labels ("Aanvangsdatum:"), and bare numbers.
-    not_a_heading = CAPTION.match(text) or text.endswith(":") or sum(c.isalpha() for c in text) < 2
-    if is_short and not not_a_heading and (is_large or (bold and len(text) <= 100)):
-        if m := NUMBERED_HEADING.match(text):
-            return ElementType.HEADING, m.group(1).count(".") + 1
-        return ElementType.HEADING, 1 if size >= body_size * 1.5 else 2
+    if is_short and not is_non_heading(text) and (is_large or (bold and len(text) <= 100)):
+        level = numbering_level(text) or (1 if size >= body_size * 1.5 else 2)
+        return ElementType.HEADING, level
+    if is_unstyled_heading(text):
+        return ElementType.HEADING, numbering_level(text)
     if LIST_MARKER.match(text):
         return ElementType.LIST_ITEM, None
     return ElementType.PARAGRAPH, None
@@ -209,29 +199,7 @@ def _body_font_size(pdf: pymupdf.Document) -> float:
     return sizes.most_common(1)[0][0] if sizes else 10.0
 
 
-def _mark_headers_and_footers(blocks: list[_Block], pdf: pymupdf.Document) -> None:
-    """Re-type repeating blocks in the page margins as OTHER."""
-    if pdf.page_count < 3:
-        return
-
-    def in_margin(b: _Block) -> bool:
-        height = pdf[b.page - 1].rect.height
-        return b.rect.y1 < height * EDGE_FRACTION or b.rect.y0 > height * (1 - EDGE_FRACTION)
-
-    def key(b: _Block) -> str:
-        return re.sub(r"\d+", "#", b.text.lower())
-
-    margin_blocks = [b for b in blocks if b.type != ElementType.TABLE and in_margin(b)]
-    pages_per_key: dict[str, set[int]] = {}
-    for b in margin_blocks:
-        pages_per_key.setdefault(key(b), set()).add(b.page)
-    threshold = max(3, pdf.page_count * 0.3)
-    for b in margin_blocks:
-        if len(pages_per_key[key(b)]) >= threshold:
-            b.type, b.heading_level = ElementType.OTHER, None
-
-
-def _overlap(a: pymupdf.Rect, b: pymupdf.Rect) -> float:
-    """Fraction of a's area that lies inside b."""
-    inter = pymupdf.Rect(a) & b
-    return 0.0 if inter.is_empty or a.is_empty else inter.get_area() / a.get_area()
+def _in_any(bbox: tuple[float, float, float, float], rects: list[pymupdf.Rect]) -> bool:
+    """True if the centre of bbox lies inside any of rects."""
+    centre = pymupdf.Point((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+    return any(centre in r for r in rects)

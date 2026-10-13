@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Generated pipeline data (reproducible from data/raw + scripts)
+data/parsed/*
+data/chunks/*
+data/eval/runs/*
+!data/**/.gitkeep
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

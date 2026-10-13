@@ -1,0 +1,22 @@
+# Local Postgres with the pgvector extension.
+# Start: docker compose up -d    Stop: docker compose down    Wipe data: docker compose down -v
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag # local dev only
+      POSTGRES_DB: rag
+    ports:
+      - "5433:5432" # 5433 on the host, to avoid clashing with other local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

@@ -1,0 +1,35 @@
+[project]
+name = "rag"
+version = "0.1.0"
+description = "Step-by-step RAG pipeline over Dutch infrastructure documents, on Azure"
+authors = [
+    { name = "Richard Corke", email = "45803053+sandriches@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "azure-identity>=1.26.0",
+    "openai>=3.29.0",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.15.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

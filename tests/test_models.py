@@ -35,6 +35,7 @@ def test_chunk_must_trace_to_at_least_one_element():
             pages=[1],
             token_count=1,
             chunker="test",
+            parser="test",
         )
 
 
@@ -47,6 +48,7 @@ def test_chunk_pages_are_sorted_and_deduplicated():
         pages=[2, 1, 2],
         token_count=1,
         chunker="test",
+        parser="test",
     )
     assert chunk.pages == [1, 2]
 

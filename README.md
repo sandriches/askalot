@@ -23,8 +23,8 @@ uv run pytest
 | 0. Setup | ✅ |
 | 1a. Ingest & parse (PyMuPDF) | ✅ |
 | 1b. Ingest & parse (Document Intelligence) + comparison | ✅ |
-| 2. Chunking | ⏳ |
-| 3. Embedding | |
+| 2. Chunking | ✅ |
+| 3. Embedding | ⏳ |
 | 4. Index | |
 | 5. Retrieval | |
 | 6. Generation + citations | |

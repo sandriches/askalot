@@ -90,6 +90,7 @@ class Chunk(BaseModel):
     )
     token_count: int = Field(ge=0)
     chunker: str = Field(description="Which chunking strategy made this, e.g. 'fixed-512'")
+    parser: str = Field(description="Which parser made the underlying elements")
 
     @model_validator(mode="after")
     def _sort_pages(self) -> Self:
